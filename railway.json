@@ -1,0 +1,55 @@
+{
+  "$schema": "https://railway.app/railway.schema.json",
+  "services": {
+    "backend": {
+      "name": "medusa-backend",
+      "source": {
+        "type": "git",
+        "path": "."
+      },
+      "build": {
+        "builder": "DOCKERFILE",
+        "dockerfilePath": "./Dockerfile"
+      },
+      "deploy": {
+        "startCommand": "yarn start",
+        "restartPolicyType": "ALWAYS"
+      },
+      "env": {
+        "NODE_ENV": "production",
+        "PORT": "9000",
+        "MEDUSA_JWT_SECRET": "supersecretjwt",
+        "STORE_CORS": "https://yourstorefront.com",
+        "MEDUSA_ADMIN_CORS": "https://admin.yourstore.com"
+      },
+      "envFrom": [
+        { "plugin": "postgresql", "envVariable": "DATABASE_URL" },
+        { "plugin": "redis", "envVariable": "REDIS_URL" }
+      ],
+      "healthcheckPath": "/store/products"
+    },
+    "worker": {
+      "name": "medusa-worker",
+      "source": {
+        "type": "git",
+        "path": "."
+      },
+      "build": {
+        "builder": "DOCKERFILE",
+        "dockerfilePath": "./Dockerfile"
+      },
+      "deploy": {
+        "startCommand": "yarn start:worker",
+        "restartPolicyType": "ALWAYS"
+      },
+      "env": {
+        "NODE_ENV": "production",
+        "MEDUSA_JWT_SECRET": "supersecretjwt"
+      },
+      "envFrom": [
+        { "plugin": "postgresql", "envVariable": "DATABASE_URL" },
+        { "plugin": "redis", "envVariable": "REDIS_URL" }
+      ]
+    }
+  }
+}

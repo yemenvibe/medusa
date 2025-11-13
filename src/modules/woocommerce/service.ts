@@ -14,6 +14,7 @@ export type WooCommerceModuleOptions = {
   apiVersion?: string
   defaultPageSize?: number
   requestTimeoutMs?: number
+  requestRetries?: number
 }
 
 type RequestOptions<T = unknown> = {
@@ -165,48 +166,6 @@ export default class WooCommerceModuleService {
     }
 
     throw lastError ?? new Error(`WooCommerce request to ${path} failed after retries`)
-
-    if (!response.ok) {
-      const text = await response.text()
-      throw new MedusaError(
-        MedusaError.Types.INVALID_DATA,
-        `WooCommerce request to ${url.pathname} failed (${response.status}): ${text}`,
-      )
-    }
-
-    if (response.status === 204) {
-      return {
-        data: (defaultValue as T) ?? (undefined as T),
-        headers: response.headers,
-      }
-    }
-
-    const contentType = response.headers.get("content-type") || ""
-    const rawBody = await response.text()
-
-    if (!rawBody.trim()) {
-      return {
-        data: (defaultValue as T) ?? (undefined as T),
-        headers: response.headers,
-      }
-    }
-
-    if (!contentType.toLowerCase().includes("application/json")) {
-      throw new MedusaError(
-        MedusaError.Types.INVALID_DATA,
-        `Expected JSON from WooCommerce but received '${contentType}' with payload: ${rawBody.slice(0, 200)}`,
-      )
-    }
-
-    try {
-      const parsed = JSON.parse(rawBody) as T
-      return { data: parsed, headers: response.headers }
-    } catch (error) {
-      throw new MedusaError(
-        MedusaError.Types.INVALID_DATA,
-        `Unable to parse WooCommerce response from ${url.pathname}: ${(error as Error).message}. Raw payload: ${rawBody.slice(0, 200)}`,
-      )
-    }
   }
 
   async getCategories(options?: {

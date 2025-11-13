@@ -60,7 +60,7 @@ export const migrateCategoriesFromWooCommerceWorkflow = createWorkflow(
     const { data: existingCategories } = useQueryGraphStep({
       entity: "product_category",
       fields: ["id", "metadata", "handle", "name", "parent_category_id"],
-      filters: categoryFilters,
+      filters: categoryFilters as any,
     }).config({ name: "get-existing-woocommerce-categories" })
 
     const { categoriesToCreate, categoriesToUpdate, parentAssignments } = transform(

@@ -5,7 +5,7 @@ import {
   StepResponse,
   WorkflowResponse,
 } from "@medusajs/framework/workflows-sdk";
-import { FilterableProductProps } from "@medusajs/types";
+import { FilterableProductCategoryProps } from "@medusajs/types";
 import PayloadModuleService from "../modules/payload/service";
 
 const step = createStep;
@@ -26,9 +26,12 @@ const syncStep = step(
     const batchSize = 200;
     let hasMore = true;
     let offset = 0;
-    let filter: FilterableProductProps = {};
+    const filter: FilterableProductCategoryProps = {};
     if (isDefined(input.category_ids)) {
-      filter.id = input.category_ids;
+      const ids = input.category_ids.filter((value): value is string => typeof value === "string");
+      if (ids.length) {
+        filter.id = ids;
+      }
     }
 
     while (hasMore) {

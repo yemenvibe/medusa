@@ -1,5 +1,5 @@
 import { CreateCustomerDTO, MetadataType } from "@medusajs/framework/types";
-import { Modules } from "@medusajs/framework/utils";
+import { MedusaError, Modules } from "@medusajs/framework/utils";
 import {
   createStep,
   createWorkflow,
@@ -13,8 +13,17 @@ const subscribeCustomerToNewsletter = createStep(
   async (input: CreateCustomerDTO, { container }) => {
     const customerModuleService = container.resolve(Modules.CUSTOMER);
 
+    const email = typeof input.email === "string" ? input.email.trim() : "";
+
+    if (!email) {
+      throw new MedusaError(
+        MedusaError.Types.INVALID_DATA,
+        "Newsletter subscription requires a valid email address",
+      );
+    }
+
     let customer = await customerModuleService
-      .listCustomers({ email: input.email }, { select: ["id", "metadata"] })
+      .listCustomers({ email }, { select: ["id", "metadata"] })
       .then((customers) => (customers.length > 0 ? customers[0] : null));
 
     const metadata: MetadataType = { newsletter: true };
@@ -29,6 +38,7 @@ const subscribeCustomerToNewsletter = createStep(
     if (!customer) {
       customer = await customerModuleService.createCustomers({
         ...input,
+        email,
         metadata: {
           ...input.metadata,
           ...metadata,
@@ -58,6 +68,10 @@ const subscribeCustomerToNewsletter = createStep(
     return new StepResponse(response);
   },
   async (input, { container }) => {
+    if (!input) {
+      return;
+    }
+
     const customerModuleService = container.resolve(Modules.CUSTOMER);
 
     if (input.compensate === "nothing") {
