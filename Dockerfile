@@ -1,17 +1,27 @@
-FROM node:20-alpine
-
+FROM node:20-alpine AS builder
 WORKDIR /app
 
-# Copy and install dependencies
-COPY package.json yarn.lock ./
-RUN yarn install --production
+RUN apk add --no-cache python3 make g++
 
-# Copy source files and build
+COPY package.json yarn.lock ./
+RUN yarn install --frozen-lockfile
+
 COPY . .
+ENV NODE_ENV=production
 RUN yarn build
 
+FROM node:20-alpine AS runner
+WORKDIR /app
+
 ENV NODE_ENV=production
+
+COPY package.json yarn.lock ./
+RUN yarn install --frozen-lockfile --production && yarn cache clean
+
+COPY --from=builder /app/dist ./dist
+COPY --from=builder /app/medusa-config.ts ./medusa-config.ts
+COPY --from=builder /app/static ./static
+
 EXPOSE 9000
 
-# Default command for API
 CMD ["yarn", "start"]
