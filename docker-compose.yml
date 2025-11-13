@@ -1,0 +1,22 @@
+version: "3.8"
+
+services:
+  medusa:
+    build: .
+    container_name: medusa_backend
+    restart: unless-stopped
+    env_file:
+      - .env
+    ports:
+      - "9000:9000"
+    command: >
+      sh -c "yarn build && yarn medusa db:migrate && yarn start"
+
+  worker:
+    build: .
+    container_name: medusa_worker
+    restart: unless-stopped
+    env_file:
+      - .env
+    command: >
+      sh -c "yarn build && yarn start:worker"

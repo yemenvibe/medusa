@@ -1,0 +1,43 @@
+services:
+  - type: web
+    name: medusa-backend
+    runtime: node
+    plan: starter
+    buildCommand: "yarn build && yarn medusa db:migrate"
+    startCommand: "yarn start"
+    envVars:
+      - key: DATABASE_URL
+        sync: false
+      - key: REDIS_URL
+        sync: false
+      - key: MEDUSA_JWT_SECRET
+        sync: false
+      - key: NODE_ENV
+        value: production
+      - key: STORE_CORS
+        value: https://yourstorefront.com
+      - key: MEDUSA_ADMIN_CORS
+        value: https://admin.yourstore.com
+      - key: S3_BUCKET
+        sync: false
+      - key: S3_ENDPOINT
+        sync: false
+      - key: AWS_ACCESS_KEY_ID
+        sync: false
+      - key: AWS_SECRET_ACCESS_KEY
+        sync: false
+
+  - type: worker
+    name: medusa-worker
+    runtime: node
+    plan: starter
+    startCommand: "yarn start:worker"
+    envVars:
+      - key: DATABASE_URL
+        sync: false
+      - key: REDIS_URL
+        sync: false
+      - key: MEDUSA_JWT_SECRET
+        sync: false
+      - key: NODE_ENV
+        value: production
