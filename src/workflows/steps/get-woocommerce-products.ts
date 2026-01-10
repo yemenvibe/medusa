@@ -21,7 +21,7 @@ export const getWooCommerceProductsStep = createStep(
       page: currentPage,
       pageSize,
     })
-console.log("WooCommerce products response:", response)
+// console.log("WooCommerce products response:", response)
     return new StepResponse(response)
   },
 )

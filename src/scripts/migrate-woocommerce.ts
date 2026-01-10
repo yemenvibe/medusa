@@ -16,7 +16,3 @@ export default async function migrateWooCommerceJob(
   })
 }
 
-export const config = {
-  name: "migrate-woocommerce-job",
-  schedule: "0 2 * * *",
-}

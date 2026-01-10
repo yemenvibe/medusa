@@ -39,11 +39,19 @@ const syncStep = step(
         order: { id: "ASC" },
       });
 
-      await promiseAll(
+      const results = await promiseAll(
         products.map((prod) => {
-          return payloadModule.upsertSyncDocument("product", prod);
+          return payloadModule.upsertSyncDocument("product", prod).catch((error) => {
+            console.error(`Failed to sync product ${prod.id} (${prod.handle || prod.title}):`, error.message);
+            return { error: true, productId: prod.id, errorMessage: error.message };
+          });
         }),
       );
+
+      const errors = results.filter((r: any) => r?.error);
+      if (errors.length > 0) {
+        console.warn(`Failed to sync ${errors.length} out of ${products.length} products in this batch`);
+      }
 
       offset += batchSize;
       hasMore = offset < count;

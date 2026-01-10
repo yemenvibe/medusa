@@ -1,4 +1,4 @@
-import type { SubscriberArgs, SubscriberConfig } from "@medusajs/medusa";
+import type { SubscriberArgs, SubscriberConfig } from "@medusajs/framework";
 import { payloadCategorySyncWorkflow } from "../workflows/payload-sync-categories";
 
 export default async function upsertPayloadCategory({

@@ -1,4 +1,10 @@
-import { createWorkflow, transform, WorkflowResponse } from "@medusajs/framework/workflows-sdk"
+import {
+  createStep,
+  createWorkflow,
+  StepResponse,
+  transform,
+  WorkflowResponse,
+} from "@medusajs/framework/workflows-sdk"
 import {
   CreateProductWorkflowInputDTO,
   ProductDTO,
@@ -32,6 +38,79 @@ const sanitizeText = (value?: string | null): string => {
   return decoded.replace(/\s+/g, " ").trim()
 }
 
+const sanitizeDescription = (value?: string | null): string => {
+  const text = sanitizeText(value)
+  if (!text) {
+    return ""
+  }
+
+  const schemaRegex = /\{\"@context\":.*?\}\s*/i
+  const cleaned = text.replace(schemaRegex, "").trim()
+
+  return cleaned
+}
+
+const buildTitleAndSubtitle = (
+  value?: string | null,
+): { title: string; subtitle?: string } => {
+  const text = sanitizeText(value)
+  if (!text) {
+    return { title: "" }
+  }
+
+  const separators = ["|", " – ", " — ", " - ", ":", ";"]
+  let title = text
+  let subtitle: string | undefined
+
+  for (const separator of separators) {
+    if (title.includes(separator)) {
+      const parts = title.split(separator)
+      const candidateTitle = parts[0]?.trim()
+      const candidateSubtitle = parts.slice(1).join(separator).trim()
+
+      if (candidateTitle?.length && candidateTitle.length >= 3) {
+        title = candidateTitle
+        if (candidateSubtitle?.length) {
+          subtitle = candidateSubtitle
+        }
+        break
+      }
+    }
+  }
+
+  if (!subtitle) {
+    const commaIndex = title.indexOf(",")
+    if (commaIndex > 0) {
+      const candidateTitle = title.slice(0, commaIndex).trim()
+      const tail = title.slice(commaIndex + 1).trim()
+      if (candidateTitle.length >= 3) {
+        if (!subtitle && tail.length) {
+          subtitle = tail
+        }
+        title = candidateTitle
+      }
+    }
+  }
+
+  const MAX_LENGTH = 80
+  if (title.length > MAX_LENGTH) {
+    title = title.slice(0, MAX_LENGTH).trim()
+  }
+
+  if (subtitle && subtitle.length > MAX_LENGTH) {
+    subtitle = subtitle.slice(0, MAX_LENGTH).trim()
+  }
+
+  if (!subtitle) {
+    const remainder = text.slice(title.length).trim()
+    if (remainder && remainder.length >= 3) {
+      subtitle = remainder.slice(0, MAX_LENGTH).trim()
+    }
+  }
+
+  return { title: title || text, subtitle }
+}
+
 const sanitizeOptionName = (value?: string | null): string => {
   const text = value?.trim()
   if (!text) {
@@ -41,8 +120,68 @@ const sanitizeOptionName = (value?: string | null): string => {
   return normalized.charAt(0).toUpperCase() + normalized.slice(1)
 }
 
+const buildVariantTitleFromOptions = (
+  options: Record<string, string>,
+  fallback: string,
+): string => {
+  const entries = Object.entries(options || {})
+    .map(([k, v]) => [sanitizeOptionName(k), sanitizeOptionValue(v)] as const)
+    .filter(([k, v]) => Boolean(k) && Boolean(v) && k !== DEFAULT_OPTION_NAME)
+
+  if (!entries.length) {
+    // If this is the "Default" option case, fallback is usually already the best label.
+    return sanitizeText(fallback) || fallback
+  }
+
+  const rank = (name: string) => {
+    const n = name.toLowerCase()
+    if (n === "type") return 0
+    if (n === "qty" || n === "quantity") return 1
+    return 2
+  }
+
+  // Prefer a stable, human-friendly ordering: Type first, then QTY, then others A→Z.
+  entries.sort(([a], [b]) => {
+    const ra = rank(a)
+    const rb = rank(b)
+    if (ra !== rb) return ra - rb
+    return a.localeCompare(b)
+  })
+
+  const values = entries.map(([, v]) => v).filter(Boolean)
+  return values.join(" / ") || sanitizeText(fallback) || fallback
+}
+
 const sanitizeOptionValue = (value?: string | null): string => {
   return value?.trim()?.slice(0, 100) || ""
+}
+
+const normalizeHandle = (value?: string | null): string | undefined => {
+  if (!value) {
+    return undefined
+  }
+
+  const trimmed = value.trim().toLowerCase()
+  if (!trimmed) {
+    return undefined
+  }
+
+  const normalized = trimmed
+    .replace(/https?:\/\/[^/]+/g, "")
+    .replace(/[^a-z0-9/]+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/\/+/g, "/")
+    .replace(/^-+|-+$/g, "")
+    .replace(/^\/+/g, "")
+    .replace(/\/+$/g, "")
+
+  if (!normalized) {
+    return undefined
+  }
+
+  const truncated = normalized.slice(0, 120)
+
+  return truncated.replace(/-+$/g, "")
 }
 
 const sanitizeSkuBase = (value?: string | null): string => {
@@ -145,18 +284,80 @@ const collectProductImages = (
   })
 }
 
+/**
+ * WooCommerce returns prices as strings/numbers.
+ *
+ * Medusa expects money amounts in minor units (e.g. MYR sen).
+ *
+ * By default we assume WooCommerce prices are in major units (RM), so we multiply by 100.
+ * If your WooCommerce API already returns minor units, set:
+ *   WOOCOMMERCE_PRICE_SCALE=1
+ *
+ * Examples (scale=100):
+ *   "445.00" -> 44500
+ *   "44,500.00" -> 4450000
+ */
 const parseAmount = (value?: string | number | null): number | null => {
   if (value === null || value === undefined || value === "") {
     return null
   }
 
-  const numeric = typeof value === "string" ? Number.parseFloat(value) : Number(value)
+  const scaleEnv = process.env.WOOCOMMERCE_PRICE_SCALE
+  const scaleCandidate = scaleEnv ? Number(scaleEnv) : 100
+  const scale = Number.isFinite(scaleCandidate) && scaleCandidate > 0 ? scaleCandidate : 100
+
+  const numeric =
+    typeof value === "string"
+      ? Number.parseFloat(
+          // allow "44,500.00" thousands separators
+          value.trim().replace(/,/g, ""),
+        )
+      : Number(value)
   if (!Number.isFinite(numeric)) {
     return null
   }
 
-  return Math.round(numeric * 100)
+  return Math.round(numeric * scale)
 }
+
+const logWooCommerceMigrationSummaryStep = createStep(
+  "log-woocommerce-migration-summary",
+  async (
+    {
+      fetchedProducts,
+      productsToCreate,
+      productsToUpdate,
+    }: {
+      fetchedProducts: WooCommerceProductWithRelations[]
+      productsToCreate: Array<CreateProductWorkflowInputDTO>
+      productsToUpdate: Array<UpsertProductDTO>
+    },
+    { container },
+  ) => {
+    const logger = container.resolve("logger") as {
+      info?: (...args: any[]) => void
+      warn?: (...args: any[]) => void
+    } | undefined
+
+    const fetchedCount = fetchedProducts?.length ?? 0
+    const createCount = productsToCreate?.length ?? 0
+    const updateCount = productsToUpdate?.length ?? 0
+
+    if (logger?.info) {
+      logger.info(
+        `[woocommerce-migration] fetched=${fetchedCount} create=${createCount} update=${updateCount}`,
+      )
+    }
+
+    if (logger?.warn && fetchedCount > 0 && createCount === 0 && updateCount === 0) {
+      logger.warn(
+        "[woocommerce-migration] All fetched products were skipped. Check price data, handles, or duplicate SKUs.",
+      )
+    }
+
+    return new StepResponse(null)
+  },
+)
 
 type MigrateProductsFromWooCommerceInput = {
   currentPage: number
@@ -325,8 +526,10 @@ export const migrateProductsFromWooCommerceWorkflow = createWorkflow(
 
     const { data: existingProductsByHandle } = useQueryGraphStep({
       entity: "product",
-      fields: ["id", "handle"],
+      fields: ["id", "handle", "created_at"],
       filters: handleFilters,
+      // Removed unsupported 'order' property from options
+      options: {},
     }).config({ name: "get-products-by-handle" })
 
     const {
@@ -371,7 +574,7 @@ export const migrateProductsFromWooCommerceWorkflow = createWorkflow(
         const defaultSalesChannelId = stores?.[0]?.default_sales_channel_id || null
         const shippingProfileId = shippingProfiles?.[0]?.id || null
 
-        const normalizeCurrencyCode = (code?: string | null) => code?.trim().toUpperCase()
+  const normalizeCurrencyCode = (code?: string | null) => code?.trim().toLowerCase()
         const currencyCodeCandidates = new Set<string>()
 
         const supportedCurrencies =
@@ -404,7 +607,7 @@ export const migrateProductsFromWooCommerceWorkflow = createWorkflow(
         }
 
         if (!currencyCodeCandidates.size) {
-          currencyCodeCandidates.add("USD")
+          currencyCodeCandidates.add("myr")
         }
 
         const currencyCodes = Array.from(currencyCodeCandidates)
@@ -449,26 +652,33 @@ export const migrateProductsFromWooCommerceWorkflow = createWorkflow(
           return sku
         }
 
-        const existingByHandle = new Map<string, { id: string }>()
+        const existingByHandle = new Map<string, { id: string; created_at?: Date | string | number }>()
         existingProductsByHandle?.forEach((product) => {
           if (product.handle) {
-            existingByHandle.set(product.handle, { id: product.id })
+            existingByHandle.set(product.handle, {
+              id: product.id,
+              created_at: (product as { created_at?: Date | string | number }).created_at,
+            })
           }
         })
 
         wooProducts.forEach((wooProduct) => {
           const productExternalId = wooProduct.id.toString()
-          const productTitle = sanitizeText(wooProduct.name) || `Product ${productExternalId}`
+          const titleAndSubtitle = buildTitleAndSubtitle(wooProduct.name)
+          const productTitle = titleAndSubtitle.title || `Product ${productExternalId}`
+          const productSubtitle = titleAndSubtitle.subtitle
           const productDescription =
-            sanitizeText(wooProduct.description) || sanitizeText(wooProduct.short_description)
+            sanitizeDescription(wooProduct.short_description) ||
+            sanitizeDescription(wooProduct.description)
           const galleryImages = collectProductImages(wooProduct)
           const productThumbnail = galleryImages[0]?.url || wooProduct.images?.[0]?.src
 
           const productData: CreateProductWorkflowInputDTO | UpsertProductDTO = {
             title: productTitle,
+            subtitle: productSubtitle,
             description: productDescription,
             status: wooProduct.status === "publish" ? "published" : "draft",
-            handle: wooProduct.slug || undefined,
+            handle: normalizeHandle(wooProduct.slug) || normalizeHandle(productTitle),
             external_id: productExternalId,
             thumbnail: productThumbnail,
             shipping_profile_id: shippingProfileId || undefined,
@@ -484,7 +694,10 @@ export const migrateProductsFromWooCommerceWorkflow = createWorkflow(
           }
 
           if (!productData.id && productData.handle && existingByHandle.has(productData.handle)) {
-            return
+            const existing = existingByHandle.get(productData.handle)
+            if (existing?.id) {
+              productData.id = existing.id
+            }
           }
 
           const existingImagesByExternalId = new Map<
@@ -616,8 +829,8 @@ export const migrateProductsFromWooCommerceWorkflow = createWorkflow(
                     stock_status: wooProduct.stock_status,
                     stock_quantity: wooProduct.stock_quantity,
                     description:
-                      sanitizeText(wooProduct.short_description) ||
-                      sanitizeText(wooProduct.description) ||
+                      sanitizeDescription(wooProduct.short_description) ||
+                      sanitizeDescription(wooProduct.description) ||
                       productTitle,
                     attributes:
                       wooProduct.default_attributes?.length
@@ -651,17 +864,26 @@ export const migrateProductsFromWooCommerceWorkflow = createWorkflow(
 
           const variants = variationSource
             .map((variation, index) => {
+              // WooCommerce fields:
+              // - sale_price: discounted price (when on sale)
+              // - price: current active price (may equal sale_price when on sale)
+              // - regular_price: original price
+              //
+              // Medusa expects amounts in minor units (integer), so we parse to cents in `parseAmount`.
+              // Use nullish coalescing so a legitimate `0` is preserved.
               const priceAmount =
-                parseAmount(variation.regular_price) ||
-                parseAmount(variation.price) ||
-                parseAmount(wooProduct.regular_price) ||
-                parseAmount(wooProduct.price)
+                parseAmount((variation as any).sale_price) ??
+                parseAmount(variation.price) ??
+                parseAmount(variation.regular_price) ??
+                parseAmount((wooProduct as any).sale_price) ??
+                parseAmount(wooProduct.price) ??
+                parseAmount(wooProduct.regular_price)
 
-              if (!priceAmount) {
+              if (priceAmount === null) {
                 return null
               }
 
-              const variantTitle = sanitizeText(variation.description) || productTitle
+              const baseVariantTitle = sanitizeText(variation.description) || productTitle
               const fallbackSkuBase = `${sanitizeSkuBase(wooProduct.slug) || "PROD"}-${index + 1}`
               const existingVariant = existingVariantByExternalId.get(variation.id.toString())
               const allowedSkuNormalized = existingVariant?.sku
@@ -690,12 +912,14 @@ export const migrateProductsFromWooCommerceWorkflow = createWorkflow(
               if (!Object.keys(variantOptions).length) {
                 const { optionName, optionValue } = assignOptionValue(
                   DEFAULT_OPTION_NAME,
-                  variantTitle,
+                  baseVariantTitle,
                 )
                 if (optionName && optionValue) {
                   variantOptions[optionName] = optionValue
                 }
               }
+
+              const variantTitle = buildVariantTitleFromOptions(variantOptions, baseVariantTitle)
 
               const variantMetadata: Record<string, unknown> = {
                 external_id: variation.id.toString(),
@@ -741,6 +965,8 @@ export const migrateProductsFromWooCommerceWorkflow = createWorkflow(
                   amount: priceAmount,
                 })),
                 metadata: variantMetadata,
+                allow_backorder: true,
+                manage_inventory: false,
                 id: existingVariant?.id,
               }
             })
@@ -793,6 +1019,12 @@ export const migrateProductsFromWooCommerceWorkflow = createWorkflow(
 
     const productsToUpdate = transform({ processedProducts }, ({ processedProducts }) => {
       return processedProducts.productsToUpdate ?? []
+    })
+
+    logWooCommerceMigrationSummaryStep({
+      fetchedProducts: products,
+      productsToCreate,
+      productsToUpdate,
     })
 
     const createdProducts = productsToCreate.length

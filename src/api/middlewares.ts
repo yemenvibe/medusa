@@ -1,14 +1,7 @@
 import { defineMiddlewares, authenticate } from "@medusajs/framework/http"
-import type { 
-  MedusaNextFunction, 
-  MedusaRequest, 
-  MedusaResponse, 
-} from "@medusajs/framework/http"
-import { ConfigModule } from "@medusajs/framework"
-import { parseCorsOrigins } from "@medusajs/framework/utils"
-import cors from "cors"
 import { z } from "zod"
 
+// Export Zod schemas for use in API routes
 export const AdminMagentoMigrationsPost = z.object({
   type: z.array(z.enum(["product", "category"])).min(1),
 })
@@ -20,29 +13,9 @@ export const AdminWooCommerceMigrationsPost = z.object({
   sync_all_pages: z.boolean().optional(),
 })
 
+// Default Medusa 2.12.4 middleware configuration
 export default defineMiddlewares({
   routes: [
-    {
-      matcher: "/static*",
-      middlewares: [
-        (
-          req: MedusaRequest, 
-          res: MedusaResponse, 
-          next: MedusaNextFunction
-        ) => {
-          console.log("CORS middleware for static files")
-          const configModule: ConfigModule =
-            req.scope.resolve("configModule")
-
-          return cors({
-            origin: parseCorsOrigins(
-              configModule.projectConfig.http.storeCors
-            ),
-            credentials: true,
-          })(req, res, next)
-        },
-      ],
-    },
     {
       // Protect all admin payload sync endpoints
       matcher: "/admin/payload*",

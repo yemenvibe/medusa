@@ -1,22 +1,40 @@
 version: "3.8"
 
 services:
+  # 🚀 Medusa Backend (v2)
   medusa:
     build: .
     container_name: medusa_backend
     restart: unless-stopped
-    env_file:
-      - .env
     ports:
       - "9000:9000"
-    command: >
-      sh -c "yarn build && yarn medusa db:migrate && yarn start"
-
-  worker:
-    build: .
-    container_name: medusa_worker
-    restart: unless-stopped
     env_file:
       - .env
-    command: >
-      sh -c "yarn build && yarn start:worker"
+    environment:
+      # Environment Variables
+      NODE_ENV: production
+
+      # 🔗 Railway-managed PostgreSQL and Redis URLs
+      # Railway will inject DATABASE_URL and REDIS_URL automatically
+      DATABASE_URL: ${DATABASE_URL}
+      REDIS_URL: ${REDIS_URL}
+
+      # CORS
+      STORE_CORS: https://yourstorefront.com
+      MEDUSA_ADMIN_CORS: https://admin.yourstore.com
+
+      # Secrets
+      MEDUSA_JWT_SECRET: supersecretjwt
+
+      # Optional S3 / R2 storage
+      S3_BUCKET: ${S3_BUCKET}
+      S3_ENDPOINT: ${S3_ENDPOINT}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
+    command: yarn start
+    networks:
+      - medusa_network
+
+networks:
+  medusa_network:
+    driver: bridge

@@ -1,4 +1,5 @@
-import type { SubscriberArgs, SubscriberConfig } from "@medusajs/medusa";
+
+import type { SubscriberArgs, SubscriberConfig } from "@medusajs/framework";
 import { payloadCollectionSyncWorkflow } from "../workflows/payload-sync-collections";
 
 export default async function upsertPayloadCollection({

@@ -3,6 +3,8 @@ import { createStep, StepResponse } from "@medusajs/framework/workflows-sdk"
 import { Modules } from "@medusajs/framework/utils"
 import type { CreateProductWorkflowInputDTO, UpsertProductDTO } from "@medusajs/framework/types"
 
+export const WOOCOMMERCE_IMAGE_PENDING_METADATA_KEY = "woocommerce_image_download_pending"
+
 const MIME_TYPES_BY_EXTENSION: Record<string, string> = {
   ".jpg": "image/jpeg",
   ".jpeg": "image/jpeg",
@@ -110,6 +112,7 @@ const cloneProduct = <T extends CreateProductWorkflowInputDTO | UpsertProductDTO
 type DownloadWooCommerceImagesInput = {
   productsToCreate: CreateProductWorkflowInputDTO[]
   productsToUpdate: UpsertProductDTO[]
+  forceDownload?: boolean
 }
 
 type UploadedImageInfo = {
@@ -150,11 +153,19 @@ export const downloadWooCommerceImagesStep = createStep(
       info?: (...args: any[]) => void
     } | undefined
 
-    const delayFlagRaw = process.env.WOOCOMMERCE_DELAY_IMAGE_DOWNLOAD || ""
-    const shouldDelayDownloads = ["1", "true", "yes", "on"].includes(delayFlagRaw.toLowerCase())
+    const {
+      productsToCreate: rawProductsToCreate = [],
+      productsToUpdate: rawProductsToUpdate = [],
+      forceDownload = false,
+    } = input
 
-    const productsToCreate = input.productsToCreate?.map((product) => cloneProduct(product)) ?? []
-    const productsToUpdate = input.productsToUpdate?.map((product) => cloneProduct(product)) ?? []
+    const delayFlagRaw = process.env.WOOCOMMERCE_DELAY_IMAGE_DOWNLOAD || ""
+    const shouldDelayDownloads = forceDownload
+      ? false
+      : ["1", "true", "yes", "on"].includes(delayFlagRaw.toLowerCase())
+
+    const productsToCreate = rawProductsToCreate.map((product) => cloneProduct(product))
+    const productsToUpdate = rawProductsToUpdate.map((product) => cloneProduct(product))
 
     const imageRefs: ImageReference[] = []
     const thumbnailRefs: ThumbnailReference[] = []
@@ -251,6 +262,58 @@ export const downloadWooCommerceImagesStep = createStep(
         `[woocommerce-images] Skipping download for ${urlsToUpload.size} image(s); will rely on delayed processing.`,
       )
 
+      const collectProductUrls = (
+        target: "create" | "update",
+        productIndex: number,
+      ): string[] => {
+        const set = new Set<string>()
+
+        imageRefs.forEach((ref) => {
+          if (ref.target === target && ref.productIndex === productIndex) {
+            set.add(ref.originalUrl)
+          }
+        })
+
+        thumbnailRefs.forEach((ref) => {
+          if (ref.target === target && ref.productIndex === productIndex) {
+            set.add(ref.originalUrl)
+          }
+        })
+
+        variantRefs.forEach((ref) => {
+          if (ref.target === target && ref.productIndex === productIndex) {
+            set.add(ref.originalUrl)
+          }
+        })
+
+        return Array.from(set)
+      }
+
+      const markProductsAsPending = (
+        products: (CreateProductWorkflowInputDTO | UpsertProductDTO)[],
+        target: "create" | "update",
+      ) => {
+        products.forEach((product, productIndex) => {
+          const urls = collectProductUrls(target, productIndex)
+          if (!urls.length) {
+            return
+          }
+
+          if (!product.metadata || typeof product.metadata !== "object") {
+            product.metadata = {}
+          }
+
+          ;(product.metadata as Record<string, unknown>)[WOOCOMMERCE_IMAGE_PENDING_METADATA_KEY] = {
+            target,
+            productIndex,
+            urls,
+          }
+        })
+      }
+
+      markProductsAsPending(productsToCreate, "create")
+      markProductsAsPending(productsToUpdate, "update")
+
       return new StepResponse(
         {
           productsToCreate,
@@ -289,7 +352,7 @@ export const downloadWooCommerceImagesStep = createStep(
       )
     }
 
-    const uploadedMap = new Map<string, UploadedImageInfo>()
+  const uploadedMap = new Map<string, UploadedImageInfo>()
     const createdFileIds: string[] = []
     const concurrencyFromEnv = Number.parseInt(process.env.WOOCOMMERCE_IMAGE_DOWNLOAD_CONCURRENCY || "", 10)
     const concurrency = Number.isFinite(concurrencyFromEnv)
@@ -319,6 +382,13 @@ export const downloadWooCommerceImagesStep = createStep(
           })
 
           if (!response.ok) {
+            if (response.status === 404) {
+              logger?.info?.(
+                `[woocommerce-images] Skipping missing image ${url} (404)`
+              )
+              continue
+            }
+
             throw new Error(`Failed to download image (${response.status})`)
           }
 

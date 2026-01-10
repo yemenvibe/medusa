@@ -15,22 +15,28 @@
   "scripts": {
     "build": "medusa build",
     "seed": "medusa exec ./src/scripts/seed.ts",
+    "fix:variant-titles": "medusa exec ./src/scripts/fix-variant-titles.ts --",
+    "discount:price-list": "medusa exec ./src/scripts/discount-price-list-prices.ts --",
     "start": "medusa start",
     "dev": "medusa develop",
-    "start:worker": "medusa worker",
+    "dev:with-worker": "node ./scripts/dev-with-worker.js",
+    "start:worker": "node ./scripts/start-worker.js",
+    "test:webhook": "ts-node scripts/test-billplz-webhook.ts",
     "test:integration:http": "TEST_TYPE=integration:http NODE_OPTIONS=--experimental-vm-modules jest --silent=false --runInBand --forceExit",
     "test:integration:modules": "TEST_TYPE=integration:modules NODE_OPTIONS=--experimental-vm-modules jest --silent=false --runInBand --forceExit",
     "test:unit": "TEST_TYPE=unit NODE_OPTIONS=--experimental-vm-modules jest --silent --runInBand --forceExit"
   },
   "dependencies": {
-    "@medusajs/admin-sdk": "2.11.2",
-    "@medusajs/cli": "2.11.2",
-    "@medusajs/file-s3": "2.11.2",
-    "@medusajs/framework": "2.11.2",
-    "@medusajs/medusa": "2.11.2"
+    "@medusajs/admin-sdk": "2.12.4",
+    "@medusajs/cli": "2.12.4",
+    "@medusajs/file-s3": "2.12.4",
+    "@medusajs/framework": "2.12.4",
+    "@medusajs/medusa": "2.12.4",
+    "medusa-payment-billplz": "^0.0.6",
+    "resend": "^6.6.0"
   },
   "devDependencies": {
-    "@medusajs/test-utils": "2.11.2",
+    "@medusajs/test-utils": "2.12.4",
     "@swc/core": "1.5.7",
     "@swc/jest": "^0.2.36",
     "@types/jest": "^29.5.13",
@@ -48,5 +54,6 @@
   },
   "engines": {
     "node": ">=20"
-  }
+  },
+  "packageManager": "yarn@4.11.0"
 }
