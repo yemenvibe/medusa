@@ -2,6 +2,8 @@
 .env
 worker.env
 backend.env
+.oldbackend.env
+.front.env
 .DS_Store
 /uploads
 /static
