@@ -69,6 +69,7 @@ const databaseUrl = resolveDatabaseUrl()
 // Note: Redis locking is intentionally disabled (see below).
 // Cache should only use Redis when explicitly enabled (REDIS_URL_CACHE).
 // Event Bus and Workflow Engine can fall back to REDIS_URL for convenience.
+
 const redisUrl = process.env.REDIS_URL || undefined
 const redisCacheUrl = process.env.REDIS_URL_CACHE || undefined
 const redisEventBusUrl =
