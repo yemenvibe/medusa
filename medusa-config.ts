@@ -37,7 +37,33 @@ const s3CredentialsProvided =
   process.env.AWS_ACCESS_KEY_ID &&
   process.env.AWS_SECRET_ACCESS_KEY
 
-const databaseUrl = process.env.POSTGRES_URL || process.env.DATABASE_URL
+const resolveDatabaseUrl = () => {
+  // Prefer DATABASE_URL in containerized/prod environments to avoid stale local .env values.
+  const raw = process.env.DATABASE_URL || process.env.POSTGRES_URL
+  if (!raw) {
+    return raw
+  }
+
+  try {
+    const parsed = new URL(raw)
+    const host = parsed.hostname.toLowerCase()
+    const isLocalPostgresHost =
+      host === "postgres" || host === "localhost" || host === "127.0.0.1"
+
+    if (isLocalPostgresHost) {
+      // Local Docker Postgres usually has SSL disabled; forcing it causes startup migration failures.
+      parsed.searchParams.set("sslmode", "disable")
+      parsed.searchParams.delete("ssl")
+      process.env.PGSSLMODE = "disable"
+    }
+
+    return parsed.toString()
+  } catch {
+    return raw
+  }
+}
+
+const databaseUrl = resolveDatabaseUrl()
 
 // Redis URLs - prefer module-specific variables, fall back to REDIS_URL.
 // Note: Redis locking is intentionally disabled (see below).
