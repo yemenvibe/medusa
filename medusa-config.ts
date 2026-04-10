@@ -376,6 +376,8 @@ if (process.env.EASYPARCEL_API_KEY) {
     })
   }
 
+
+  
   if (resendEnabled) {
     // Ensure only Resend handles "email"
     removeEmailChannelProvidersExcept("resend")
