@@ -123,7 +123,7 @@ if (s3CredentialsProvided) {
             access_key_id: process.env.AWS_ACCESS_KEY_ID,
             secret_access_key: process.env.AWS_SECRET_ACCESS_KEY,
             prefix: resolveS3Prefix(),
-            endpoint: process.env.S3_ENDPOINT,
+            endpoint: process.env.S3_PUBLIC_URL,
             force_path_style: process.env.S3_FORCE_PATH_STYLE === "true",
           },
         },
